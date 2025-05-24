@@ -43,7 +43,7 @@ public class CameraSync {
         }
     }
 
-    /** Triangulation in degrees as per your formula. */
+
     public double calcDistance(int LX, int RX) {
         double thetaL = (LX*FOV/IMG_W)+(180-FOV)/2;
         double thetaR = (RX*FOV/IMG_W)+(180-FOV)/2;
