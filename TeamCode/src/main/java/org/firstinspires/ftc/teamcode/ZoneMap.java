@@ -3,69 +3,50 @@ package org.firstinspires.ftc.teamcode;
 import java.util.Arrays;
 
 /**
- * ZoneMap represents the FTC field as a 144×144 grid (1" per cell).
- * You can mark rectangular zones (start, scoring, forbidden, etc.)
- * or individual checkpoints directly on this grid.
+ * Represents the 144×144 FTC field as a 1"-per-cell grid.
+ * You can mark rectangular zones or individual checkpoint cells.
  */
 public class ZoneMap {
     public static final int SIZE = 144;
 
-    // Cell type constants
-    public static final int EMPTY         = 0;
-    public static final int START_ZONE    = 1;
-    public static final int SCORING_ZONE  = 2;
-    public static final int CHECKPOINT    = 3;
-    public static final int FORBIDDEN     = 4;
-    // Add more types as needed
+    public static final int EMPTY        = 0;
+    public static final int START_ZONE   = 1;
+    public static final int SCORING_ZONE = 2;
+    public static final int CHECKPOINT   = 3;
+    public static final int FORBIDDEN    = 4;
+    // extend with more types if needed
 
     private final int[][] grid = new int[SIZE][SIZE];
 
-    /** Initialize all cells to EMPTY. */
     public ZoneMap() {
         for (int y = 0; y < SIZE; y++) {
             Arrays.fill(grid[y], EMPTY);
         }
     }
 
-    /**
-     * Mark a rectangular region on the field.
-     * @param x0      left X in inches (0–143)
-     * @param y0      bottom Y in inches (0–143)
-     * @param x1      right X in inches
-     * @param y1      top Y in inches
-     * @param zoneType one of the constants above
-     */
+    /** Mark a rectangular zone from (x0,y0) to (x1,y1) as zoneType. */
     public void markZone(int x0, int y0, int x1, int y1, int zoneType) {
-        for (int y = y0; y <= y1; y++) {
-            for (int x = x0; x <= x1; x++) {
-                if (inBounds(x,y)) {
-                    grid[y][x] = zoneType;
-                }
+        for (int y = Math.max(0,y0); y <= Math.min(y1,SIZE-1); y++) {
+            for (int x = Math.max(0,x0); x <= Math.min(x1,SIZE-1); x++) {
+                grid[y][x] = zoneType;
             }
         }
     }
 
-    /**
-     * Mark a single cell as a checkpoint.
-     * This cell will also be stored in PresetManager as a step.
-     */
+    /** Mark a single cell as a checkpoint. */
     public void markCheckpoint(int x, int y) {
-        if (inBounds(x,y)) {
+        if (x >= 0 && x < SIZE && y >= 0 && y < SIZE) {
             grid[y][x] = CHECKPOINT;
         }
     }
 
-    /** Retrieve the zone type at a given cell. */
+    /** Get the zone type at (x,y). */
     public int getCell(int x, int y) {
-        return inBounds(x,y) ? grid[y][x] : FORBIDDEN;
+        if (x < 0 || y < 0 || x >= SIZE || y >= SIZE) return FORBIDDEN;
+        return grid[y][x];
     }
 
-    /** Returns true if the coordinates are within [0, SIZE). */
-    private boolean inBounds(int x, int y) {
-        return x >= 0 && y >= 0 && x < SIZE && y < SIZE;
-    }
-
-    /** Expose the raw grid for pathfinding or UI. */
+    /** Expose the raw grid. */
     public int[][] getGrid() {
         return grid;
     }

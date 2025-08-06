@@ -1,145 +1,161 @@
 package org.firstinspires.ftc.teamcode.ui;
 
 import android.content.Context;
+import android.util.AttributeSet;
+import android.view.MotionEvent;
+import android.view.View;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
-import android.view.MotionEvent;
-import android.view.View;
-import org.firstinspires.ftc.teamcode.ZoneMap;
-import org.firstinspires.ftc.teamcode.Checkpoint;
-import org.firstinspires.ftc.teamcode.PresetManager;
 
-import java.util.List;
+import org.firstinspires.ftc.teamcode.ZoneMap;
 
 /**
- * ZoneMapView renders a 144×144 grid and allows the user to:
- *  - Tap-and-drag to draw rectangular zones (of the currently selected type)
- *  - Tap to add checkpoints (with current heading & action)
+ * Custom View for drawing a 144×144 grid of the FTC field.
+ *  • Drag to create rectangular zones.
+ *  • Tap a cell to trigger a 2×2 checkpoint placement/edit.
  */
 public class ZoneMapView extends View {
+
+    /** Callback when a zone rectangle is created */
+    public interface ZoneListener {
+        void onZoneCreated(int x0, int y0, int x1, int y1);
+    }
+
+    /** Callback when a cell is tapped */
+    public interface CellTapListener {
+        void onCellTapped(int x, int y);
+    }
+
     private static final int CELLS = ZoneMap.SIZE;
-    private final Paint gridPaint = new Paint();
-    private final Paint zonePaint = new Paint();
-    private final Paint cpPaint = new Paint();
 
-    private final ZoneMap zoneMap;
-    private final PresetManager preset;
+    private Paint gridPaint;
+    private Paint zonePaint;
 
-    // Current tool state
-    public enum Tool { ZONE, CHECKPOINT }
-    private Tool currentTool = Tool.ZONE;
-    private int currentZoneType = ZoneMap.START_ZONE;
-    private String currentAction = "pickup";
-    private double currentHeading = 0;
+    private ZoneMap zoneMap;                     // set via setter in Activity
+    private ZoneListener zoneListener;           // ditto
+    private CellTapListener tapListener;         // ditto
 
-    // Touch-drag coords for zone drawing
-    private int dragStartX, dragStartY;
-    private boolean dragging = false;
+    // Interaction state for dragging zones
+    private boolean draggingZone = false;
+    private int zx0, zy0;
+    private float ax, ay;
 
-    public ZoneMapView(Context ctx, ZoneMap zoneMap, PresetManager preset) {
-        super(ctx);
-        this.zoneMap = zoneMap;
-        this.preset = preset;
+    /** Constructor when creating from code */
+    public ZoneMapView(Context context) {
+        super(context);
+        initPaints();
+    }
 
+    /** Constructor used when inflating from XML */
+    public ZoneMapView(Context context, AttributeSet attrs) {
+        super(context, attrs);
+        initPaints();
+    }
+
+    /** Common paint setup */
+    private void initPaints() {
+        gridPaint = new Paint();
         gridPaint.setColor(Color.LTGRAY);
-        gridPaint.setStrokeWidth(1);
+        gridPaint.setStrokeWidth(1f);
 
-        zonePaint.setColor(Color.argb(100, 0, 0, 255));  // semi-transparent blue
-        cpPaint.setColor(Color.RED);
-        cpPaint.setTextSize(24);
+        zonePaint = new Paint();
+        zonePaint.setColor(Color.argb(80, 0, 0, 255));
+    }
+
+    /** Must be called by your Activity after inflation */
+    public void setZoneMap(ZoneMap zm) {
+        this.zoneMap = zm;
+    }
+
+    /** Must be called by your Activity after inflation */
+    public void setZoneListener(ZoneListener l) {
+        this.zoneListener = l;
+    }
+
+    /** Must be called by your Activity after inflation */
+    public void setCellTapListener(CellTapListener l) {
+        this.tapListener = l;
     }
 
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         int w = getWidth(), h = getHeight();
-        float cellW = w / (float)CELLS, cellH = h / (float)CELLS;
+        float cw = w / (float)CELLS, ch = h / (float)CELLS;
 
-        // 1) Draw grid
+        // 1) Draw grid lines
         for (int i = 0; i <= CELLS; i++) {
-            canvas.drawLine(i*cellW, 0, i*cellW, h, gridPaint);
-            canvas.drawLine(0, i*cellH, w, i*cellH, gridPaint);
+            canvas.drawLine(i*cw, 0, i*cw, h, gridPaint);
+            canvas.drawLine(0, i*ch, w, i*ch, gridPaint);
         }
 
-        // 2) Draw zones
-        int[][] grid = zoneMap.getGrid();
-        for (int y = 0; y < CELLS; y++) {
-            for (int x = 0; x < CELLS; x++) {
-                int type = grid[y][x];
-                if (type != ZoneMap.EMPTY) {
-                    zonePaint.setColor(getColorForType(type));
-                    canvas.drawRect(x*cellW, y*cellH,
-                            (x+1)*cellW, (y+1)*cellH,
-                            zonePaint);
+        // 2) Draw all marked zones (including 2×2 CP boxes)
+        if (zoneMap != null) {
+            int[][] grid = zoneMap.getGrid();
+            for (int y = 0; y < CELLS; y++) {
+                for (int x = 0; x < CELLS; x++) {
+                    if (grid[y][x] != ZoneMap.EMPTY) {
+                        canvas.drawRect(
+                                x*cw, y*ch,
+                                (x+1)*cw, (y+1)*ch,
+                                zonePaint
+                        );
+                    }
                 }
             }
         }
 
-        // 3) Draw checkpoints
-        List<Checkpoint> cps = preset.getCheckpoints();
-        for (Checkpoint cp : cps) {
-            float cx = (float)(cp.x / ZoneMap.SIZE * w);
-            float cy = (float)(cp.y / ZoneMap.SIZE * h);
-            canvas.drawCircle(cx, cy, Math.min(cellW,cellH)*0.4f, cpPaint);
-            canvas.drawText(cp.action, cx + 4, cy - 4, cpPaint);
+        // 3) Preview drag rectangle
+        if (draggingZone) {
+            canvas.drawRect(
+                    zx0*cw, zy0*ch,
+                    ax*cw,  ay*ch,
+                    zonePaint
+            );
         }
     }
 
     @Override
     public boolean onTouchEvent(MotionEvent e) {
+        int w = getWidth(), h = getHeight();
         float xf = e.getX(), yf = e.getY();
-        int x = (int)(xf / getWidth() * CELLS);
-        int y = (int)(yf / getHeight()* CELLS);
+        int cellX = (int)(xf / w * CELLS);
+        int cellY = (int)(yf / h * CELLS);
 
         switch (e.getAction()) {
             case MotionEvent.ACTION_DOWN:
-                if (currentTool == Tool.ZONE) {
-                    dragStartX = x; dragStartY = y; dragging = true;
-                } else {
-                    zoneMap.markCheckpoint(x, y);
-                    preset.addCheckpoint(x, y, currentHeading, currentAction);
-                }
+                // start dragging for a zone
+                zx0 = cellX;
+                zy0 = cellY;
+                draggingZone = true;
                 break;
 
             case MotionEvent.ACTION_MOVE:
-                // Optional: show rubber-band preview
+                if (draggingZone) {
+                    ax = xf / w * CELLS;
+                    ay = yf / h * CELLS;
+                }
                 break;
 
             case MotionEvent.ACTION_UP:
-                if (currentTool == Tool.ZONE && dragging) {
-                    int x0 = Math.min(dragStartX, x);
-                    int y0 = Math.min(dragStartY, y);
-                    int x1 = Math.max(dragStartX, x);
-                    int y1 = Math.max(dragStartY, y);
-                    zoneMap.markZone(x0, y0, x1, y1, currentZoneType);
-                    dragging = false;
+                if (draggingZone) {
+                    // finish zone drag
+                    draggingZone = false;
+                    int x1 = (int)ax;
+                    int y1 = (int)ay;
+                    if (zoneListener != null) {
+                        zoneListener.onZoneCreated(zx0, zy0, x1, y1);
+                    }
+                }
+                // detect quick tap for checkpoint
+                if (tapListener != null
+                        && e.getEventTime() - e.getDownTime() < 200) {
+                    tapListener.onCellTapped(cellX, cellY);
                 }
                 break;
         }
         invalidate();
         return true;
-    }
-
-    /** Change between zone-draw or checkpoint mode */
-    public void setTool(Tool t) { currentTool = t; }
-
-    /** Choose which zone type to draw (e.g. START_ZONE, SCORING_ZONE) */
-    public void setZoneType(int zoneType) { currentZoneType = zoneType; }
-
-    /** When adding checkpoints, set their action label */
-    public void setCheckpointAction(String action) { currentAction = action; }
-
-    /** When adding checkpoints, set their desired heading */
-    public void setCheckpointHeading(double h) { currentHeading = h; }
-
-    /** Utility to pick a consistent color for each zone type */
-    private int getColorForType(int type) {
-        switch(type) {
-            case ZoneMap.START_ZONE:   return Color.argb(100,0,255,0);
-            case ZoneMap.SCORING_ZONE: return Color.argb(100,255,0,0);
-            case ZoneMap.FORBIDDEN:    return Color.argb(100,128,0,128);
-            default:                   return Color.argb(100,0,0,255);
-        }
     }
 }

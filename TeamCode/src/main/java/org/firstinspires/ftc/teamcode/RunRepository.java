@@ -1,71 +1,50 @@
 package org.firstinspires.ftc.teamcode.ai;
 
-import com.google.gson.Gson;
+import com.google.gson.*;
 import com.google.gson.reflect.TypeToken;
-import org.firstinspires.ftc.teamcode.Checkpoint;
-
+import org.firstinspires.ftc.teamcode.*;
 import java.io.*;
 import java.lang.reflect.Type;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 
 /**
- * RunRepository saves and loads past autonomous “runs” (presets + performance).
- * Data is serialized as JSON in the robot’s internal storage.
+ * Saves/loads autonomous run records as JSON.
  */
 public class RunRepository {
-    private static final String FILENAME = "autonomous_runs.json";
-    private final Gson gson = new Gson();
-    private final File storageDir;
+    private static final String FNAME="autonomous_runs.json";
+    private final Gson gson=new Gson();
+    private final File dir;
 
     public RunRepository(File storageDir) {
-        this.storageDir = storageDir;
-        if (!storageDir.exists()) storageDir.mkdirs();
+        this.dir=storageDir;
+        if (!dir.exists()) dir.mkdirs();
     }
 
-    /** Data model for a single run record. */
     public static class RunRecord {
         public String presetName;
         public List<Checkpoint> checkpoints;
-        public long elapsedTimeMs;
-        public double finalX, finalY, finalHeading;
-        public double score;
+        public long elapsedMs;
+        public double finalX, finalY, finalHeading, score;
     }
 
-    /**
-     * Load all stored runs from disk.
-     */
     public List<RunRecord> loadRuns() {
-        File file = new File(storageDir, FILENAME);
-        if (!file.exists()) return new ArrayList<>();
-
-        try (Reader reader = new FileReader(file)) {
-            Type listType = new TypeToken<List<RunRecord>>(){}.getType();
-            return gson.fromJson(reader, listType);
-        } catch (IOException e) {
-            e.printStackTrace();
-            return new ArrayList<>();
-        }
+        File f=new File(dir,FNAME);
+        if (!f.exists()) return new ArrayList<>();
+        try (Reader r=new FileReader(f)) {
+            Type t=new TypeToken<List<RunRecord>>(){}.getType();
+            return gson.fromJson(r,t);
+        } catch(Exception e){ e.printStackTrace(); return new ArrayList<>(); }
     }
 
-    /**
-     * Save all runs back to disk.
-     */
     public void saveRuns(List<RunRecord> runs) {
-        File file = new File(storageDir, FILENAME);
-        try (Writer writer = new FileWriter(file)) {
-            gson.toJson(runs, writer);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        try (Writer w=new FileWriter(new File(dir,FNAME))) {
+            gson.toJson(runs,w);
+        } catch(Exception e) { e.printStackTrace(); }
     }
 
-    /**
-     * Add a new run record and persist.
-     */
-    public void addRun(RunRecord record) {
-        List<RunRecord> runs = loadRuns();
-        runs.add(record);
-        saveRuns(runs);
+    public void addRun(RunRecord rec) {
+        List<RunRecord> all=loadRuns();
+        all.add(rec);
+        saveRuns(all);
     }
 }

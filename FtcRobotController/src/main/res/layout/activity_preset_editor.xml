@@ -1,22 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
-<RelativeLayout
+<FrameLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <!-- ZoneMapView fills most of the screen -->
+    <!-- Your custom view class: full package name -->
     <org.firstinspires.ftc.teamcode.ui.ZoneMapView
         android:id="@+id/zoneMapView"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"/>
+        android:layout_height="match_parent"/>
 
-    <!-- Tool buttons at bottom -->
+    <!-- Bottom overlay with two buttons -->
     <LinearLayout
-        android:layout_alignParentBottom="true"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
         android:orientation="horizontal"
+        android:background="#80000000"
         android:padding="8dp">
 
         <Button
@@ -26,34 +26,10 @@
             android:text="Zone"/>
 
         <Button
-            android:id="@+id/btnCP"
+            android:id="@+id/btnCheckpointTool"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Checkpoint"/>
 
-        <Spinner
-            android:id="@+id/spinnerZoneType"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:entries="@array/zone_types"/>
-
-        <EditText
-            android:id="@+id/etAction"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:hint="Action"/>
-
-        <EditText
-            android:id="@+id/etHeading"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:hint="Heading"/>
-
-        <Button
-            android:id="@+id/btnSave"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Save"/>
-
     </LinearLayout>
-</RelativeLayout>
+</FrameLayout>
