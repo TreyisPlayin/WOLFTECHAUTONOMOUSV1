@@ -3,15 +3,15 @@ package org.firstinspires.ftc.teamcode;
 import com.qualcomm.robotcore.hardware.ColorSensor;
 
 /**
- * Controls intake rollers and detects objects by color.
+ * Controls intake rollers and uses ColorSensor to detect target.
  */
 public class IntakeSystem {
     private final HardwareConfig robot;
     private final ColorSensor sensor;
 
-    public IntakeSystem(HardwareConfig robot) {
-        this.robot = robot;
-        this.sensor = robot.colorSensor;
+    public IntakeSystem(HardwareConfig hw) {
+        this.robot  = hw;
+        this.sensor = hw.colorSensor;
     }
 
     public void activateIntake() {
@@ -20,12 +20,13 @@ public class IntakeSystem {
 
     public void release() {
         robot.intakeMotor.setPower(-1.0);
-        try { Thread.sleep(500);} catch (InterruptedException ignored){}
+        try { Thread.sleep(500); } catch (InterruptedException e) {}
         robot.intakeMotor.setPower(0);
     }
 
+    /** Simple red-dominant detection. */
     public boolean detectTargetColor() {
-        int r=sensor.red(), g=sensor.green(), b=sensor.blue();
+        int r = sensor.red(), g = sensor.green(), b = sensor.blue();
         return r>100 && g<80 && b<80;
     }
 }

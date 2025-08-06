@@ -7,7 +7,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import org.firstinspires.ftc.teamcode.ZoneMap;
 import org.firstinspires.ftc.teamcode.PresetManager;
 import org.firstinspires.ftc.teamcode.Checkpoint;
-import org.firstinspires.ftc.teamcode.ui.ZoneMapView;
+
 import java.util.Arrays;
 
 /**

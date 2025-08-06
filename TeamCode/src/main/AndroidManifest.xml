@@ -5,24 +5,12 @@
     <application
         android:allowBackup="false"
         android:label="@string/app_name"
-        android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true">
 
-        <!-- Your main FTC RobotController activity (usually already present) -->
-        <activity android:name="com.qualcomm.ftcrobotcontroller.FtcRobotControllerActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-
-        <!-- Other FTC OpModes / activities go here… -->
-
-        <!-- Preset Editor UI screen -->
+        <!-- Your custom UI screen -->
         <activity
-            android:name="org.firstinspires.ftc.teamcode.ui.PresetEditorActivity"
+            android:name=".ui.PresetEditorActivity"
             android:exported="true" />
-
     </application>
+
 </manifest>

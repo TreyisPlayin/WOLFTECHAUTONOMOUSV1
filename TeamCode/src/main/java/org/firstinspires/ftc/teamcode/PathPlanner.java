@@ -3,8 +3,7 @@ package org.firstinspires.ftc.teamcode;
 import java.util.*;
 
 /**
- * A* pathfinding on the 144×144 grid from ZoneMap.
- * Avoids cells ≠ EMPTY.
+ * A* pathfinding on the 144×144 grid. Avoids any non-EMPTY cell.
  */
 public class PathPlanner {
     private final ZoneMap zoneMap;
@@ -18,7 +17,7 @@ public class PathPlanner {
         int gx = (int)goal.getX(), gy = (int)goal.getY();
 
         boolean[][] closed = new boolean[ZoneMap.SIZE][ZoneMap.SIZE];
-        Node[][] nodes  = new Node[ZoneMap.SIZE][ZoneMap.SIZE];
+        Node[][] nodes     = new Node[ZoneMap.SIZE][ZoneMap.SIZE];
         PriorityQueue<Node> open = new PriorityQueue<>(Comparator.comparingDouble(n->n.f));
 
         Node s = new Node(sx, sy, 0, h(sx,sy,gx,gy), null);
@@ -28,7 +27,7 @@ public class PathPlanner {
         int[][] dirs = {{1,0},{-1,0},{0,1},{0,-1}};
         while (!open.isEmpty()) {
             Node cur = open.poll();
-            if (cur.x==gx && cur.y==gy) return build(cur);
+            if (cur.x==gx && cur.y==gy) return buildPath(cur);
 
             closed[cur.y][cur.x] = true;
             for (int[] d : dirs) {
@@ -37,15 +36,15 @@ public class PathPlanner {
                 if (closed[ny][nx] || zoneMap.getCell(nx,ny)!=ZoneMap.EMPTY) continue;
 
                 double ng = cur.g + 1;
-                Node n = nodes[ny][nx];
-                if (n==null) {
-                    n = new Node(nx, ny, ng, h(nx,ny,gx,gy), cur);
-                    nodes[ny][nx] = n;
-                    open.add(n);
-                } else if (ng < n.g) {
-                    n.g = ng;
-                    n.f = ng + n.h;
-                    n.parent = cur;
+                Node nb = nodes[ny][nx];
+                if (nb==null) {
+                    nb = new Node(nx, ny, ng, h(nx,ny,gx,gy), cur);
+                    nodes[ny][nx] = nb;
+                    open.add(nb);
+                } else if (ng < nb.g) {
+                    nb.g = ng;
+                    nb.f = ng + nb.h;
+                    nb.parent = cur;
                 }
             }
         }
@@ -53,12 +52,12 @@ public class PathPlanner {
     }
 
     private double h(int x,int y,int gx,int gy) {
-        return Math.abs(gx-x)+Math.abs(gy-y);
+        return Math.abs(gx-x) + Math.abs(gy-y);
     }
 
-    private List<Position> build(Node n) {
+    private List<Position> buildPath(Node n) {
         LinkedList<Position> path = new LinkedList<>();
-        while (n!=null) {
+        while (n != null) {
             path.addFirst(new Position(n.x, n.y, 0));
             n = n.parent;
         }
@@ -67,15 +66,15 @@ public class PathPlanner {
 
     private static class Node {
         int x,y; double g,h,f; Node parent;
-        Node(int x,int y,double g,double h,Node parent) {
-            this.x=x;this.y=y;this.g=g;this.h=h;this.f=g+h;this.parent=parent;
+        Node(int x,int y,double g,double h,Node p) {
+            this.x = x; this.y=y; this.g=g; this.h=h; this.f=g+h; this.parent=p;
         }
     }
 
-    /** Stub: follow each waypoint. Replace with real drivetrain code. */
+    /** Stub: drive along path. Replace with your drivetrain logic. */
     public void followPath(List<Position> path, HardwareConfig robot) {
-        for (Position p : path) {
-            // robot.driveTo(p.x, p.y);
+        for (Position wp : path) {
+            // e.g. driveTo(wp.getX(), wp.getY());
         }
     }
 }

@@ -7,7 +7,8 @@ public class Position {
     private double x, y, heading;
 
     public Position(double x, double y, double heading) {
-        this.x = x; this.y = y;
+        this.x = x;
+        this.y = y;
         setHeading(heading);
     }
 
@@ -26,6 +27,6 @@ public class Position {
     }
 
     @Override public String toString() {
-        return String.format("Pos[%.1f,%.1f @%.1f°]", x,y,heading);
+        return String.format("Pos[%.1f,%.1f @%.1f°]", x, y, heading);
     }
 }

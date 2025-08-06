@@ -1,10 +1,7 @@
 package org.firstinspires.ftc.teamcode;
 
 /**
- * A single step in your autonomous sequence.
- * x, y: target coordinates (inches),
- * heading: desired orientation when arriving (degrees),
- * action: label ("start", "pickup", "score", "wait:500", "stop:5", etc.)
+ * A single autonomous step: go to (x,y), face heading°, then perform action.
  */
 public class Checkpoint {
     public final double x, y, heading;
@@ -19,6 +16,7 @@ public class Checkpoint {
 
     @Override
     public String toString() {
-        return String.format("CP[%.1f,%.1f @%.1f° : %s]", x, y, heading, action);
+        return String.format("CP[x=%.1f,y=%.1f,hdg=%.1f,act=%s]",
+                x, y, heading, action);
     }
 }
