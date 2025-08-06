@@ -3,33 +3,41 @@ package org.firstinspires.ftc.teamcode;
 import com.qualcomm.robotcore.hardware.ColorSensor;
 
 /**
- * IntakeSystem.java
- *
- * Automatic grab helper: call autoGrab() when aligned.
+ * IntakeSystem controls rollers or arms to pick up and release objects.
+ * It also uses a ColorSensor to detect if the target is present.
  */
 public class IntakeSystem {
+
     private final HardwareConfig robot;
-    private final ColorSensor color;
+    private final ColorSensor colorSensor;
 
-    public IntakeSystem(HardwareConfig hw) {
-        this.robot = hw;
-        this.color = hw.frontSensor; // or dedicated color sensor
+    public IntakeSystem(HardwareConfig robot) {
+        this.robot = robot;
+        this.colorSensor = robot.colorSensor;
     }
 
-    /** Auto-grab: spin intake until object detected up close. */
-    public void autoGrab() {
+    /**
+     * Runs intake rollers inward to grab objects.
+     */
+    public void activateIntake() {
         robot.intakeMotor.setPower(1.0);
-        // you could wait for a beam-break or timeout
-        sleep(500);
-        robot.intakeMotor.setPower(0);
     }
 
-    /** Release object */
+    /** Reverses rollers to eject objects. */
     public void release() {
         robot.intakeMotor.setPower(-1.0);
-        sleep(500);
+        try { Thread.sleep(500); } catch (InterruptedException ignored) {}
         robot.intakeMotor.setPower(0);
     }
 
-    private void sleep(long ms) { try { Thread.sleep(ms); } catch (InterruptedException ignored){} }
+    /**
+     * Uses a simple red-color threshold to detect game element.
+     * @return true if red-dominant object is seen.
+     */
+    public boolean detectTargetColor() {
+        int red   = colorSensor.red();
+        int green = colorSensor.green();
+        int blue  = colorSensor.blue();
+        return red > 100 && green < 80 && blue < 80;
+    }
 }

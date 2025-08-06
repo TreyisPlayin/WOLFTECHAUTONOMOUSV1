@@ -1,36 +1,59 @@
 package org.firstinspires.ftc.teamcode;
 
 import com.qualcomm.robotcore.hardware.DcMotor;
-import com.qualcomm.robotcore.hardware.DistanceSensor;
 import com.qualcomm.robotcore.hardware.HardwareMap;
+import com.qualcomm.robotcore.hardware.ColorSensor;
+import com.qualcomm.robotcore.hardware.DistanceSensor;
+import com.qualcomm.robotcore.hardware.Servo;
 
 /**
- * Maps all robot hardware ports to variables
- * and provides basic drive methods.
+ * HardwareConfig centralizes all hardware initialization.
+ * After construction, each subsystem can reference robot.leftFront, etc.
  */
 public class HardwareConfig {
-    public DcMotor leftDrive, rightDrive, intakeMotor;
-    public DistanceSensor frontSensor, backSensor, leftSensor, rightSensor;
+    // Drive motors
+    public DcMotor leftFront, leftBack, rightFront, rightBack;
 
-    public HardwareConfig(HardwareMap hw) {
-        leftDrive   = hw.get(DcMotor.class, "leftDrive");
-        rightDrive  = hw.get(DcMotor.class, "rightDrive");
-        intakeMotor = hw.get(DcMotor.class, "intakeMotor");
-        frontSensor = hw.get(DistanceSensor.class, "frontSensor");
-        backSensor  = hw.get(DistanceSensor.class, "backSensor");
-        leftSensor  = hw.get(DistanceSensor.class, "leftSensor");
-        rightSensor = hw.get(DistanceSensor.class, "rightSensor");
-    }
+    // Intake
+    public DcMotor intakeMotor;
+    public Servo  intakeArm;
 
-    /** Tank drive */
-    public void drive(double leftPow, double rightPow) {
-        leftDrive.setPower(leftPow);
-        rightDrive.setPower(rightPow);
-    }
+    // Odometry (dead wheels)
+    public DcMotor encoderLeft, encoderRight, encoderBack;
 
-    /** Stop all motion */
-    public void stopAll() {
-        drive(0,0);
-        intakeMotor.setPower(0);
+    // Sensors
+    public ColorSensor colorSensor;
+    public DistanceSensor frontDistance, leftDistance, rightDistance, backDistance;
+
+    /** Call in your OpMode’s init to map names to hardware. */
+    public HardwareConfig(HardwareMap hwMap) {
+        // Drive motors
+        leftFront  = hwMap.get(DcMotor.class, "leftFront");
+        leftBack   = hwMap.get(DcMotor.class, "leftBack");
+        rightFront = hwMap.get(DcMotor.class, "rightFront");
+        rightBack  = hwMap.get(DcMotor.class, "rightBack");
+
+        // Intake
+        intakeMotor = hwMap.get(DcMotor.class, "intakeMotor");
+        intakeArm   = hwMap.get(Servo.class,  "intakeArm");
+
+        // Odometry encoders
+        encoderLeft  = hwMap.get(DcMotor.class, "encoderLeft");
+        encoderRight = hwMap.get(DcMotor.class, "encoderRight");
+        encoderBack  = hwMap.get(DcMotor.class, "encoderBack");
+
+        // Sensors
+        colorSensor    = hwMap.get(ColorSensor.class,    "colorSensor");
+        frontDistance  = hwMap.get(DistanceSensor.class, "frontDistance");
+        leftDistance   = hwMap.get(DistanceSensor.class, "leftDistance");
+        rightDistance  = hwMap.get(DistanceSensor.class, "rightDistance");
+        backDistance   = hwMap.get(DistanceSensor.class, "backDistance");
+
+        // Motor direction adjustments (example)
+        rightFront.setDirection(DcMotor.Direction.REVERSE);
+        rightBack .setDirection(DcMotor.Direction.REVERSE);
+
+        // Optionally, set zero-power behavior
+        intakeMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
     }
 }

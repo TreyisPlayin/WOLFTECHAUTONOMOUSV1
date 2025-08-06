@@ -38,7 +38,14 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 <resources>
 
-  <string name="app_name">FTC Robot Controller</string>
+    <string-array name="zone_types">
+        <item>START_ZONE</item>
+        <item>SCORING_ZONE</item>
+        <item>FORBIDDEN</item>
+    </string-array>
+
+
+    <string name="app_name">FTC Robot Controller</string>
 
   <!-- Menu -->
   <string name="inspection_mode_menu_item">Self Inspect</string>
