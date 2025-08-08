@@ -4,146 +4,175 @@ import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import java.util.List;
 
 /**
- * Drives through the preset’s checkpoints in order:
- *   1) rotateTo(heading)
- *   2) driveTo(x, y)
- *   3) perform action
+ * Executes: for each checkpoint → plan (A* + smoothing), Pure Pursuit follow, then action.
+ * Dynamic obstacle updates; re-plan if blocked. AprilTag fusion runs continuously.
  */
 public class AutonomousRunner {
-    private final LinearOpMode opMode;
+    private final LinearOpMode op;
     private final HardwareConfig robot;
     private final PathPlanner planner;
-    private final Odometry odometry;
-    private final CameraSync camSync;
+    private final Odometry odo;
+    private final HuskyLensStereo husky;
+    private final VisionWebcamPortal portal;
+    private final AprilTagLocalizer tagLoc;
     private final IntakeSystem intake;
+    private final DistanceObstacleManager obstacles;
+    private final ActionRegistry actions;
 
-    // PID controllers and tolerances
-    private final PIDController rotPID = new PIDController(0.01, 0.0, 0.0005);
-    private final PIDController distPID = new PIDController(0.1, 0.0, 0.01);
-    private static final double HEADING_TOLERANCE = 1.0;  // degrees
-    private static final double DISTANCE_TOLERANCE = 0.5; // inches
+    private final long reserveMsForBolt; // time reserve for endgame bolt
+    private final Position finalBoltGoal;
 
-    public AutonomousRunner(LinearOpMode opMode,
+    // Heading PID still used for quick rotates (e.g., before action)
+    private final PIDController rotPID = new PIDController(0.010, 0.0, 0.0005);
+    private static final double HEADING_TOL = 1.0; // degrees
+
+    // Pure Pursuit tuners (start here)
+    private double LOOKAHEAD_IN = 12.0;
+    private double MAX_XY_POWER = 0.7;
+    private double MAX_TURN_PWR = 0.9;
+
+    public AutonomousRunner(LinearOpMode op,
                             HardwareConfig robot,
                             PathPlanner planner,
-                            Odometry odometry,
-                            CameraSync camSync,
-                            IntakeSystem intake) {
-        this.opMode   = opMode;
-        this.robot    = robot;
-        this.planner  = planner;
-        this.odometry = odometry;
-        this.camSync  = camSync;
-        this.intake   = intake;
+                            Odometry odo,
+                            HuskyLensStereo husky,
+                            VisionWebcamPortal portal,
+                            AprilTagLocalizer tagLoc,
+                            IntakeSystem intake,
+                            DistanceObstacleManager obstacles,
+                            ActionRegistry actions,
+                            long reserveMsForBolt,
+                            Position finalBoltGoal) {
+        this.op=op; this.robot=robot; this.planner=planner; this.odo=odo;
+        this.husky=husky; this.portal=portal; this.tagLoc=tagLoc; this.intake=intake;
+        this.obstacles=obstacles; this.actions=actions;
+        this.reserveMsForBolt = reserveMsForBolt; this.finalBoltGoal = finalBoltGoal;
     }
 
-    /** Main entry: run through all checkpoints in the preset. */
     public void runPreset(PresetManager pm) {
-        List<Checkpoint> cps = pm.getCheckpoints();
-        for (Checkpoint cp : cps) {
-            if (!opMode.opModeIsActive()) break;
+        long startMs = System.currentTimeMillis();
 
-            opMode.telemetry.addData("Next CP", cp);
-            opMode.telemetry.update();
+        for (Checkpoint cp : pm.getCheckpoints()) {
+            if (!op.opModeIsActive()) break;
 
-            // 1) Rotate to desired heading
+            // 1) Path plan to this checkpoint (A* returns smoothed list already)
+            Position cur = odo.getCurrentPosition();
+            List<Position> smoothPath = planner.aStar(cur, new Position(cp.x, cp.y, cp.heading));
+
+            // 2) Pure Pursuit follow (with tag fusion + obstacle updates + replanning)
+            followPathPurePursuit(smoothPath, new Position(cp.x, cp.y, cp.heading));
+
+            // 3) Optional: rotate to exact heading before action
             rotateTo(cp.heading);
 
-            // 2) Drive to (x,y)
-            driveTo(cp.x, cp.y);
-
-            // 3) Perform the checkpoint's action
+            // 4) Execute named action
             executeAction(cp.action);
+
+            // Reserve time for endgame "bolt"
+            if (System.currentTimeMillis() - startMs > (op.getRuntime()*0 + 0) // runtime not reliable here
+                    && (reserveMsForBolt > 0) && (timeLeftMs() < reserveMsForBolt)) {
+                break;
+            }
         }
+
+        // Endgame bolt if configured
+        if (finalBoltGoal != null && op.opModeIsActive()) {
+            List<Position> boltPath = planner.aStar(odo.getCurrentPosition(), finalBoltGoal);
+            followPathPurePursuit(boltPath, finalBoltGoal);
+        }
+
+        stopDrive();
     }
 
-    /** Rotate robot in place to absolute heading (degrees). */
+    private void followPathPurePursuit(List<Position> path, Position goal) {
+        PurePursuitController pp = new PurePursuitController(robot, odo, LOOKAHEAD_IN, MAX_XY_POWER, MAX_TURN_PWR);
+        pp.setPath(path);
+
+        while (op.opModeIsActive() && !pp.isFinished()) {
+            // 1) keep odometry fresh
+            odo.update(); // your deadwheel update step :contentReference[oaicite:8]{index=8}
+
+            // 2) dynamic obstacles => re-plan if needed
+            obstacles.updateObstacles(odo.getCurrentPosition());
+
+            // 3) AprilTag fusion (blended) each loop if a good tag is visible
+            tagLoc.maybeFuseWithOdometry(odo); // blended, not snap anymore :contentReference[oaicite:9]{index=9}
+
+            // 4) if path vanished/blocked, re-plan
+            if (path == null || path.isEmpty()) {
+                path = planner.aStar(odo.getCurrentPosition(), goal);
+                pp.setPath(path);
+                if (path.isEmpty()) { pp.stopDrive(); return; }
+            }
+
+            // 5) Advance along path
+            PurePursuitController.Command cmd = pp.update();
+            pp.applyDrive(cmd);
+
+            // 6) Re-plan if a very near obstacle shows up (8" trip)
+            double near = Math.min(Math.min(
+                            robot.distFront.getDistance(org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit.INCH),
+                            robot.distLeft .getDistance(org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit.INCH)),
+                    Math.min(
+                            robot.distRight.getDistance(org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit.INCH),
+                            robot.distBack .getDistance(org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit.INCH)));
+            if (near > 0 && near < 8) {
+                pp.stopDrive();
+                path = planner.aStar(odo.getCurrentPosition(), goal);
+                pp.setPath(path);
+            }
+
+            op.telemetry.addData("Goal", goal);
+            op.telemetry.addData("Pose", odo.getCurrentPosition());
+            op.telemetry.update();
+        }
+
+        pp.stopDrive();
+    }
+
+    private void executeAction(String label) {
+        String act = label.toLowerCase();
+        if (act.startsWith("wait:")) {
+            try { Thread.sleep(Integer.parseInt(act.substring(5))); } catch (InterruptedException ignored) {}
+            return;
+        }
+        if (act.startsWith("stop:")) {
+            try { Thread.sleep(1000L*Integer.parseInt(act.substring(5))); } catch (InterruptedException ignored) {}
+            return;
+        }
+        actions.run(act, robot, husky, portal, intake, odo);
+    }
+
     private void rotateTo(double targetDeg) {
         rotPID.reset();
-        while (opMode.opModeIsActive()) {
-            odometry.update();
-            double current = odometry.getCurrentPosition().getHeading();
-            double error = shortestAngleDiff(targetDeg, current);
-            if (Math.abs(error) < HEADING_TOLERANCE) break;
-
-            double power = rotPID.calculate(error);
-            power = clamp(power, -0.5, 0.5);
-
-            // Tank turn
-            robot.leftFront .setPower( power);
-            robot.leftBack  .setPower( power);
-            robot.rightFront.setPower(-power);
-            robot.rightBack .setPower(-power);
-
-            opMode.telemetry.addData("RotErr", "%.1f", error);
-            opMode.telemetry.update();
+        while (op.opModeIsActive()) {
+            odo.update();
+            double cur = odo.getCurrentPosition().getHeading();
+            double err = angleDiff(targetDeg, cur);
+            if (Math.abs(err) < HEADING_TOL) break;
+            double p = clamp(rotPID.calculate(err), -0.5, 0.5);
+            // tank turn in place
+            robot.leftFront .setPower( p);
+            robot.leftBack  .setPower( p);
+            robot.rightFront.setPower(-p);
+            robot.rightBack .setPower(-p);
+            op.telemetry.addData("RotErr", err);
+            op.telemetry.update();
         }
-        stopDriveMotors();
+        stopDrive();
     }
 
-    /** Drive straight from current pose to (xTarget,yTarget). */
-    private void driveTo(double xTarget, double yTarget) {
-        distPID.reset();
-        Position start = odometry.getCurrentPosition();
-        double totalDist = start.distanceTo(new Position(xTarget, yTarget, 0));
-
-        while (opMode.opModeIsActive()) {
-            odometry.update();
-            Position cur = odometry.getCurrentPosition();
-            double remaining = cur.distanceTo(new Position(xTarget, yTarget, 0));
-            double error = remaining;
-
-            if (error < DISTANCE_TOLERANCE) break;
-
-            double power = distPID.calculate(error);
-            power = clamp(power, -0.6, 0.6);
-
-            // Drive forward/back
-            robot.leftFront .setPower( power);
-            robot.leftBack  .setPower( power);
-            robot.rightFront.setPower( power);
-            robot.rightBack .setPower( power);
-
-            opMode.telemetry.addData("DistRem", "%.1f/%.1f", remaining, totalDist);
-            opMode.telemetry.update();
-        }
-        stopDriveMotors();
+    // Helpers
+    private long timeLeftMs() { return Long.MAX_VALUE; } // placeholder if you later add a match timer
+    private double angleDiff(double target, double current) {
+        double d = ((target - current + 180) % 360) - 180;
+        return (d < -180) ? d + 360 : d;
     }
-
-    /** Helper to perform the action label from a checkpoint. */
-    private void executeAction(String action) {
-        String act = action.toLowerCase();
-        if (act.equals("start")) {
-            ActionHandler.doStart();
-        } else if (act.equals("pickup")) {
-            ActionHandler.lookForPickup(robot, camSync, intake, odometry);
-        } else if (act.equals("score")) {
-            ActionHandler.lookForScore(robot, intake);
-        } else if (act.startsWith("wait:")) {
-            int ms = Integer.parseInt(act.substring(5));
-            ActionHandler.waitAction(ms);
-        } else if (act.startsWith("stop:")) {
-            int s = Integer.parseInt(act.substring(5));
-            ActionHandler.stopForSeconds(s);
-        }
-    }
-
-    /** Stop all four drive motors. */
-    private void stopDriveMotors() {
+    private void stopDrive() {
         robot.leftFront .setPower(0);
         robot.leftBack  .setPower(0);
         robot.rightFront.setPower(0);
         robot.rightBack .setPower(0);
     }
-
-    /** Normalize and get shortest difference between two headings. */
-    private double shortestAngleDiff(double target, double current) {
-        double diff = ((target - current + 180) % 360) - 180;
-        return diff < -180 ? diff + 360 : diff;
-    }
-
-    /** Clamp value to [min, max]. */
-    private double clamp(double v, double min, double max) {
-        return v < min ? min : (v > max ? max : v);
-    }
+    private double clamp(double v,double lo,double hi){ return Math.max(lo, Math.min(hi, v)); }
 }
