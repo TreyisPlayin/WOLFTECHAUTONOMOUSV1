@@ -4,7 +4,7 @@ import com.qualcomm.hardware.dfrobot.HuskyLens;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.*;
 
-
+import org.firstinspires.ftc.robotcore.external.Telemetry;
 
 
 public class HardwareConfig {
@@ -26,7 +26,7 @@ public class HardwareConfig {
 
     public HardwareConfig(LinearOpMode opmode) {currentOpMode = opmode;}
 
-    public void init() {
+    public void init(HardwareMap hardwareMap, Telemetry telemetry) {
         pinpoint.resetPosAndIMU();
         //huskyLens = currentOpMode.hardwareMap.get(HuskyLens.class, "huskyLens");
         pinpoint = currentOpMode.hardwareMap.get(GoBildaPinpointDriver.class, "pinpointComputer");

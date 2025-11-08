@@ -1,9 +1,7 @@
 package org.firstinspires.ftc.teamcode;
 
-import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
-import com.qualcomm.robotcore.hardware.DcMotor;
 
 import org.firstinspires.ftc.robotcore.external.navigation.Pose2D;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
@@ -31,7 +29,7 @@ public class showcaseOp extends LinearOpMode {
         double rlPower = 0;
         double rrPower = 0;
 
-        robot.init();
+        robot.init(hardwareMap, telemetry);
 
         waitForStart();
 
