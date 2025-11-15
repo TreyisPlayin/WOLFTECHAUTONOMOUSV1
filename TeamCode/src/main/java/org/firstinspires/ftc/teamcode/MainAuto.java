@@ -17,17 +17,6 @@ public class MainAuto extends LinearOpMode {
 
     private HardwareConfig robot;
     private FieldNav nav;
-    private double lastShotRequiredRpm = 0.0;
-
-    /**
-     * Shooter model constants used by {@link #computeLaunchPowerFromXDistance(double)}.
-     * Tune these for the real robot.
-     */
-    private static final double MAX_SHOOTER_RPM = 5600.0;      // Free speed of the shooter wheel
-    private static final double LAUNCH_ANGLE_DEG = 50.0;       // Launch angle of the projectile relative to the floor
-    private static final double SHOOTER_WHEEL_RADIUS_IN = 2.0; // Radius of the shooter wheel in inches
-    private static final double GRAVITY_IN_PER_S2 = 386.09;    // g in inches/second^2
-
     @Override
     public void runOpMode() throws InterruptedException {
         // 1) Hardware init (uses your existing HardwareConfig)
@@ -118,14 +107,15 @@ public class MainAuto extends LinearOpMode {
         }
 
         // 5) Compute launch power from X distance (you plug your formula in here)
-        double launchPower = computeLaunchPowerFromXDistance(xDistanceIn);
-        double requiredRpm = Math.min(lastShotRequiredRpm, MAX_SHOOTER_RPM);
+        ShooterModel.ShotProfile shot = ShooterModel.calculateShot(xDistanceIn);
+        double launchPower = shot.power;
+        double requiredRpm = shot.requiredRpm;
 
         telemetry.addData("X distance used (in)", "%.1f", xDistanceIn);
         telemetry.addData("Launch power", "%.2f", launchPower);
         telemetry.addData("Required RPM", "%.0f", requiredRpm);
-        telemetry.addData("Launch angle (deg)", "%.1f", LAUNCH_ANGLE_DEG);
-        telemetry.addData("Max shooter RPM", "%.0f", MAX_SHOOTER_RPM);
+        telemetry.addData("Launch angle (deg)", "%.1f", ShooterModel.LAUNCH_ANGLE_DEG);
+        telemetry.addData("Max shooter RPM", "%.0f", ShooterModel.MAX_SHOOTER_RPM);
         telemetry.update();
 
         // 6) Fire both catapults with that power
@@ -137,33 +127,6 @@ public class MainAuto extends LinearOpMode {
     }
 
     /**
-     * YOUR SHOT-FORMULA GOES HERE.
-     *
-     * xDistanceIn = forward distance from the camera to the goal AprilTag (inches).
-     * Replace the body with your actual function P(x).
-     */
-    private double computeLaunchPowerFromXDistance(double xDistanceIn) {
-        double angleRad = Math.toRadians(LAUNCH_ANGLE_DEG);
-        double sinTwoTheta = Math.sin(2 * angleRad);
-
-        if (sinTwoTheta <= 1e-6 || SHOOTER_WHEEL_RADIUS_IN <= 0.0 || MAX_SHOOTER_RPM <= 0.0) {
-            lastShotRequiredRpm = 0.0;
-            return 0.0;
-        }
-
-        // Projectile range equation solved for muzzle velocity when launch/landing heights are equal.
-        double requiredVelocity = Math.sqrt(Math.max(0.0, xDistanceIn * GRAVITY_IN_PER_S2 / sinTwoTheta));
-
-        // Convert the linear velocity to the wheel RPM required to provide that tangential speed.
-        double requiredRpm = (requiredVelocity * 60.0) / (2.0 * Math.PI * SHOOTER_WHEEL_RADIUS_IN);
-        lastShotRequiredRpm = requiredRpm;
-
-        // Normalize against the maximum achievable shooter speed and clamp into motor power range.
-        double power = requiredRpm / MAX_SHOOTER_RPM;
-        return clamp(power, 0.0, 1.0);
-    }
-
-    /**
      * Basic time-based catapult fire. Both motors run at the same power.
      * Make sure leftCatapult/rightCatapult are mapped in HardwareConfig.
      */
@@ -171,7 +134,7 @@ public class MainAuto extends LinearOpMode {
         DcMotor left  = robot.leftCatapult;
         DcMotor right = robot.rightCatapult;
 
-        power = clamp(power, -1.0, 1.0);
+        power = ShooterModel.clamp(power, -1.0, 1.0);
 
         if (left != null) {
             left.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
@@ -186,11 +149,5 @@ public class MainAuto extends LinearOpMode {
 
         if (left != null)  left.setPower(0.0);
         if (right != null) right.setPower(0.0);
-    }
-
-    private double clamp(double v, double lo, double hi) {
-        if (v < lo) return lo;
-        if (v > hi) return hi;
-        return v;
     }
 }

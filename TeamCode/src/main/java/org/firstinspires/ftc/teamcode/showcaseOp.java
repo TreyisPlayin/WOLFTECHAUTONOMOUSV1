@@ -2,6 +2,7 @@ package org.firstinspires.ftc.teamcode;
 
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
+import com.qualcomm.robotcore.hardware.DcMotor;
 
 import org.firstinspires.ftc.robotcore.external.navigation.Pose2D;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
@@ -22,6 +23,12 @@ public class showcaseOp extends LinearOpMode {
         boolean inSettings = false;
         int setting = 1;
         double maxSpeed = 0.5;
+        double targetDistanceIn = 36.0;
+        boolean prevRightBumper = false;
+        boolean prevDpadUp = false;
+        boolean prevDpadDown = false;
+        boolean prevDpadLeft = false;
+        boolean prevDpadRight = false;
 
         //power variables
         double flPower = 0;
@@ -118,10 +125,72 @@ public class showcaseOp extends LinearOpMode {
             robot.leftRear.setPower(rlPower * maxSpeed);
             robot.rightRear.setPower(rrPower* maxSpeed);
 
+            if (gamepad1.dpad_up && !prevDpadUp) {
+                targetDistanceIn = Math.min(targetDistanceIn + 1.0, 96.0);
+            }
+            if (gamepad1.dpad_down && !prevDpadDown) {
+                targetDistanceIn = Math.max(targetDistanceIn - 1.0, 12.0);
+            }
+            if (gamepad1.dpad_right && !prevDpadRight) {
+                targetDistanceIn = Math.min(targetDistanceIn + 6.0, 120.0);
+            }
+            if (gamepad1.dpad_left && !prevDpadLeft) {
+                targetDistanceIn = Math.max(targetDistanceIn - 6.0, 12.0);
+            }
+
+            ShooterModel.ShotProfile shot = ShooterModel.calculateShot(targetDistanceIn);
+
+            boolean launcherAvailable = robot.leftCatapult != null || robot.rightCatapult != null;
+            if (gamepad1.right_bumper && !prevRightBumper && launcherAvailable) {
+                fireBothCatapults(shot.power, 800);
+            }
+
+            prevRightBumper = gamepad1.right_bumper;
+            prevDpadUp = gamepad1.dpad_up;
+            prevDpadDown = gamepad1.dpad_down;
+            prevDpadLeft = gamepad1.dpad_left;
+            prevDpadRight = gamepad1.dpad_right;
+
+            if (robot.intakeMotor != null) {
+                double intakePower = ShooterModel.clamp(gamepad1.right_trigger - gamepad1.left_trigger, -1.0, 1.0);
+                robot.intakeMotor.setPower(intakePower);
+                telemetry.addData("Intake power", "%.2f", intakePower);
+            }
+
+            telemetry.addData("Shot distance (in)", "%.1f", targetDistanceIn);
+            telemetry.addData("Shot power", "%.2f", shot.power);
+            telemetry.addData("Required RPM", "%.0f", shot.requiredRpm);
+            telemetry.addData("Launcher ready", launcherAvailable);
+            if (!launcherAvailable) {
+                telemetry.addLine("Configure catapult motors in the Robot Controller to enable launching.");
+            }
+            telemetry.addData("Launch angle (deg)", "%.1f", ShooterModel.LAUNCH_ANGLE_DEG);
+            telemetry.update();
+
         }
     }
 
 
 
 
+    private void fireBothCatapults(double power, long durationMs) {
+        DcMotor left  = robot.leftCatapult;
+        DcMotor right = robot.rightCatapult;
+
+        power = ShooterModel.clamp(power, -1.0, 1.0);
+
+        if (left != null) {
+            left.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+            left.setPower(power);
+        }
+        if (right != null) {
+            right.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+            right.setPower(power);
+        }
+
+        sleep(durationMs);
+
+        if (left != null)  left.setPower(0.0);
+        if (right != null) right.setPower(0.0);
+    }
 }

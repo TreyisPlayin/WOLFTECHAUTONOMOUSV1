@@ -17,6 +17,7 @@ public class HardwareConfig {
     public DcMotor rightRear;
     public DcMotor leftCatapult;
     public DcMotor rightCatapult;
+    public DcMotor intakeMotor;
     public Servo LRPusher;
     public Servo compliantWheel;
     public Servo leftAuger;
@@ -37,8 +38,28 @@ public class HardwareConfig {
         rightFront = currentOpMode.hardwareMap.get(DcMotor.class, "RF");
         leftRear = currentOpMode.hardwareMap.get(DcMotor.class, "LR");
         rightRear = currentOpMode.hardwareMap.get(DcMotor.class, "RR");
-        //leftCatapult = currentOpMode.hardwareMap.get(DcMotor.class, "CataL");
-        //rightCatapult = currentOpMode.hardwareMap.get(DcMotor.class, "CataR");
+
+        leftCatapult = currentOpMode.hardwareMap.tryGet(DcMotor.class, "CataL");
+        rightCatapult = currentOpMode.hardwareMap.tryGet(DcMotor.class, "CataR");
+        if (leftCatapult == null) {
+            leftCatapult = currentOpMode.hardwareMap.tryGet(DcMotor.class, "leftCatapult");
+        }
+        if (rightCatapult == null) {
+            rightCatapult = currentOpMode.hardwareMap.tryGet(DcMotor.class, "rightCatapult");
+        }
+        if (leftCatapult != null) {
+            leftCatapult.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        }
+        if (rightCatapult != null) {
+            rightCatapult.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        }
+        intakeMotor = currentOpMode.hardwareMap.tryGet(DcMotor.class, "intake");
+        if (intakeMotor == null) {
+            intakeMotor = currentOpMode.hardwareMap.tryGet(DcMotor.class, "intakeMotor");
+        }
+        if (intakeMotor != null) {
+            intakeMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        }
         //LRPusher = currentOpMode.hardwareMap.get(Servo.class, "pushLR");
         //compliantWheel = currentOpMode.hardwareMap.get(Servo.class, "compliantWheel");
         //leftAuger = currentOpMode.hardwareMap.get(Servo.class, "leftAuger");
