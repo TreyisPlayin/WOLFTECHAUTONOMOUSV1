@@ -17,12 +17,17 @@ public class MainAuto extends LinearOpMode {
 
     private HardwareConfig robot;
     private FieldNav nav;
-
     @Override
     public void runOpMode() throws InterruptedException {
         // 1) Hardware init (uses your existing HardwareConfig)
         robot = new HardwareConfig(this);
         robot.init(hardwareMap, telemetry);
+
+        if (robot.pinpoint == null) {
+            telemetry.addLine("Pinpoint IMU not available. Autonomous cannot run.");
+            telemetry.update();
+            return;
+        }
 
         // 2) FieldNav: Pinpoint + AprilTags via VisionPortal
         // NOTE: change "Webcam 1" if your RC config uses another name
@@ -102,10 +107,15 @@ public class MainAuto extends LinearOpMode {
         }
 
         // 5) Compute launch power from X distance (you plug your formula in here)
-        double launchPower = computeLaunchPowerFromXDistance(xDistanceIn);
+        ShooterModel.ShotProfile shot = ShooterModel.calculateShot(xDistanceIn);
+        double launchPower = shot.power;
+        double requiredRpm = shot.requiredRpm;
 
         telemetry.addData("X distance used (in)", "%.1f", xDistanceIn);
         telemetry.addData("Launch power", "%.2f", launchPower);
+        telemetry.addData("Required RPM", "%.0f", requiredRpm);
+        telemetry.addData("Launch angle (deg)", "%.1f", ShooterModel.LAUNCH_ANGLE_DEG);
+        telemetry.addData("Max shooter RPM", "%.0f", ShooterModel.MAX_SHOOTER_RPM);
         telemetry.update();
 
         // 6) Fire both catapults with that power
@@ -117,21 +127,6 @@ public class MainAuto extends LinearOpMode {
     }
 
     /**
-     * YOUR SHOT-FORMULA GOES HERE.
-     *
-     * xDistanceIn = forward distance from the camera to the goal AprilTag (inches).
-     * Replace the body with your actual function P(x).
-     */
-    private double computeLaunchPowerFromXDistance(double xDistanceIn) {
-        // Example placeholder so it compiles:
-        // double power = 0.40 + 0.005 * xDistanceIn;
-        // return clamp(power, 0.0, 1.0);
-
-        double power = 0.5; // <-- REPLACE THIS with your real math
-        return clamp(power, 0.0, 1.0);
-    }
-
-    /**
      * Basic time-based catapult fire. Both motors run at the same power.
      * Make sure leftCatapult/rightCatapult are mapped in HardwareConfig.
      */
@@ -139,7 +134,7 @@ public class MainAuto extends LinearOpMode {
         DcMotor left  = robot.leftCatapult;
         DcMotor right = robot.rightCatapult;
 
-        power = clamp(power, -1.0, 1.0);
+        power = ShooterModel.clamp(power, -1.0, 1.0);
 
         if (left != null) {
             left.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
@@ -154,11 +149,5 @@ public class MainAuto extends LinearOpMode {
 
         if (left != null)  left.setPower(0.0);
         if (right != null) right.setPower(0.0);
-    }
-
-    private double clamp(double v, double lo, double hi) {
-        if (v < lo) return lo;
-        if (v > hi) return hi;
-        return v;
     }
 }
