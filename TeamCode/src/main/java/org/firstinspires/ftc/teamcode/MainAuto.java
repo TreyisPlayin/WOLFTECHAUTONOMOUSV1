@@ -2,374 +2,163 @@ package org.firstinspires.ftc.teamcode;
 
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
-import com.qualcomm.robotcore.util.ElapsedTime;
+import com.qualcomm.robotcore.hardware.DcMotor;
 
 /**
- * Main autonomous without PresetManager / AutonomousRunner:
- *
- *  - Uses Odometry + AprilTagLocalizer for localization.
- *  - In init: "finds its tile" by snapping odometry pose to an AprilTag pose if seen.
- *  - After start:
- *      1) Drive to FAR scoring position.
- *      2) Align to goal + fire LEFT catapult + reload (3 times total).
- *      3) Drive to pickup area and let HuskyLens + servo push grab an artifact.
- *
- * TUNE: all the coordinate constants and timings near the top.
+ * Basic autonomous:
+ *  - hardware.init()
+ *  - uses FieldNav (Pinpoint + AprilTag) for localization and tag reading
+ *  - reads distance to the alliance GOAL AprilTag
+ *  - computes launch power from that distance (your formula)
+ *  - fires both catapults with that power
  */
-@Autonomous(name = "MainAuto", group = "Auto")
+@Autonomous(name = "mainAuto", group = "Auto")
 public class MainAuto extends LinearOpMode {
 
-    // ==== FIELD CONSTANTS (inches, 0–143 map) – TUNE THESE ====
-
-    //  Start tile center + starting heading
-    private static final double START_X_IN  = 18.0;
-    private static final double START_Y_IN  = 18.0;
-    private static final double START_H_DEG =   0.0; // 0° = +X direction
-
-    //  Far-away scoring pose (where you want to sit & shoot from)
-    private static final double FAR_X_IN        = 120.0;
-    private static final double FAR_Y_IN        = 110.0;
-    private static final double FAR_HEADING_DEG =   0.0;
-
-    //  Pickup area (where you want to go hunt for artifacts after 3 shots)
-    private static final double PICKUP_X_IN        = 72.0;
-    private static final double PICKUP_Y_IN        = 72.0;
-    private static final double PICKUP_HEADING_DEG = 180.0;
-
-    // === Drive tuning ===
-    private static final double DRIVE_KP_POS   = 0.02;  // position P gain
-    private static final double DRIVE_KP_HEAD  = 0.01;  // heading P gain
-    private static final double MAX_DRIVE_PWR  = 0.7;
-    private static final double MAX_TURN_PWR   = 0.5;
-    private static final double POS_TOL_IN     = 1.5;   // distance tolerance
-    private static final double HEAD_TOL_DEG   = 3.0;   // heading tolerance
-
-    // === Catapult & reload timing (TUNE THESE) ===
-    private static final long CATAPULT_FIRE_MS   = 350;
-    private static final long RELOAD_EXTEND_MS   = 300;
-    private static final long RELOAD_RETRACT_MS  = 200;
-
-    // === HuskyLens pickup tuning ===
-    private static final int   HUSKY_PIXEL_TOL       = 20;
-    private static final double HUSKY_TARGET_DIST_IN = 6.0;
-
-    // === Auto state machine ===
-    private enum State {
-        DRIVE_TO_FAR,
-        ALIGN_AND_FIRE,
-        RELOAD,
-        DECIDE_NEXT_SHOT,
-        DRIVE_TO_PICKUP,
-        PICKUP,
-        DONE
-    }
+    private HardwareConfig robot;
+    private FieldNav nav;
 
     @Override
-    public void runOpMode() {
+    public void runOpMode() throws InterruptedException {
+        // 1) Hardware init (uses your existing HardwareConfig)
+        robot = new HardwareConfig(this);
+        robot.init(hardwareMap, telemetry);
 
-        // ---- Hardware + subsystems ----
-        HardwareConfig robot      = new HardwareConfig(hardwareMap);
-        Odometry      odo        = new Odometry(robot);
-        IntakeSystem  intake     = new IntakeSystem(robot);
-        VisionWebcamPortal portal = new VisionWebcamPortal(robot);
-        HuskyLensStereo husky     = new HuskyLensStereo(
-                robot,
-                /*targetID*/ 1,    // TODO: set this to your HuskyLens trained ID for artifacts
-                /*A baseline*/ 5.0,
-                /*FOV W*/    60.0,
-                /*imgWidth*/ 320
-        );
+        // 2) FieldNav: Pinpoint + AprilTags via VisionPortal
+        // NOTE: change "Webcam 1" if your RC config uses another name
+        nav = new FieldNav(hardwareMap, telemetry, robot.pinpoint, "Webcam 1");
 
-        // AprilTag localization (this is your "AprilTag localization class")
-        AprilTagLocalizer tagLoc = new AprilTagLocalizer(
-                portal.april,
-                new AprilTagLocalizer.CamToRobot(
-                        /*cam X offset from robot center*/ 5.0,
-                        /*cam Y offset*/                    0.0,
-                        /*cam heading offset*/              0.0
-                )
-        );
+        // Set alliance so FieldNav picks the correct GOAL tag ID (BLUE=20, RED=24)
+        // Change this depending on which side you're running.
+        nav.setAlliance(FieldNav.Alliance.BLUE);
 
-        // ---- Configure AprilTag field layout (EXAMPLE – REPLACE with real game layout) ----
-        // id, xIn, yIn, headingDeg
-        tagLoc.addFieldTag(1,  12, 132, 180);
-        tagLoc.addFieldTag(2, 132, 132, -90);
-        tagLoc.addFieldTag(3, 132,  12,   0);
-        tagLoc.addFieldTag(4,  12,  12,  90);
-
-        // ---- Initial pose guess: center of starting tile ----
-        odo.setPose(new Position(START_X_IN, START_Y_IN, START_H_DEG));
-
-        telemetry.addLine("MainAuto: INIT — looking for AprilTags to lock start pose...");
+        telemetry.addLine("mainAuto init complete. Waiting for start...");
         telemetry.update();
 
-        // ==== INIT-LOOP: "find tile" via AprilTags before the match starts ====
-        Position lockedPose = null;
+        // Optional: show live pose & tag info during init loop
         while (!isStarted() && !isStopRequested()) {
-            odo.update();   // deadwheel pose
-            Position fused = tagLoc.maybeFuseWithOdometry(odo); // snap to tag if seen
+            nav.update(); // updates Pinpoint + scans for tags
 
-            if (fused != null) {
-                lockedPose = fused;
-                telemetry.addData("Start pose (tag fused)", "%s", fused);
+            FieldNav.Pose2d pose = nav.getPose();
+            telemetry.addData("Pose X (in)", "%.1f", pose.x);
+            telemetry.addData("Pose Y (in)", "%.1f", pose.y);
+            telemetry.addData("Heading (deg)", "%.1f", pose.hDeg);
+
+            FieldNav.TagDelta td = nav.getGoalTagDelta();
+            if (td != null && td.valid) {
+                telemetry.addData("Goal tag seen?", true);
+                telemetry.addData("Tag cam X (in)", "%.1f", td.xIn);
+                telemetry.addData("Tag cam Y (in)", "%.1f", td.yIn);
             } else {
-                Position guess = odo.getCurrentPosition();
-                telemetry.addData("Start pose (tile guess)", "%s", guess);
+                telemetry.addData("Goal tag seen?", false);
             }
 
             telemetry.update();
-            sleep(50);
+            sleep(20);
         }
 
+        waitForStart();
         if (isStopRequested()) return;
 
-        telemetry.addLine("MainAuto: START!");
-        if (lockedPose != null) telemetry.addData("Locked pose", "%s", lockedPose);
-        telemetry.update();
+        // 3) After start: give FieldNav a short window to pick up the goal tag
+        FieldNav.TagDelta bestTag = null;
+        double startTime = getRuntime();
 
-        // ==== RUN AUTO ====
-        State state = State.DRIVE_TO_FAR;
-        int shotsFired = 0;
-        ElapsedTime timer = new ElapsedTime();
+        while (opModeIsActive() && (getRuntime() - startTime) < 1.5) {
+            nav.update();
+            FieldNav.TagDelta cur = nav.getGoalTagDelta();
+            if (cur != null && cur.valid) {
+                bestTag = cur;
+            }
 
-        while (opModeIsActive() && state != State.DONE) {
+            FieldNav.Pose2d pose = nav.getPose();
+            telemetry.addData("Pose X (in)", "%.1f", pose.x);
+            telemetry.addData("Pose Y (in)", "%.1f", pose.y);
+            telemetry.addData("Heading (deg)", "%.1f", pose.hDeg);
 
-            // 1) Update localization: odometry + AprilTag fusion
-            odo.update();
-            tagLoc.maybeFuseWithOdometry(odo);
-
-            Position pose = odo.getCurrentPosition();
-
-            telemetry.addData("State", state);
-            telemetry.addData("Pose", "x=%.1f y=%.1f h=%.1f",
-                    pose.getX(), pose.getY(), pose.getHeading());
-            telemetry.addData("Shots fired", shotsFired);
-
-            switch (state) {
-
-                // ------------------------------------------------------------
-                case DRIVE_TO_FAR: {
-                    boolean atTarget = driveToPoint(
-                            robot,
-                            pose,
-                            FAR_X_IN,
-                            FAR_Y_IN,
-                            FAR_HEADING_DEG
-                    );
-                    if (atTarget) {
-                        stopDrive(robot);
-                        state = State.ALIGN_AND_FIRE;
-                        timer.reset();
-                    }
-                    break;
-                }
-
-                // ------------------------------------------------------------
-                case ALIGN_AND_FIRE: {
-                    // Rotate in place to face the goal using pose
-                    boolean aligned = alignToGoalHeading(robot, pose, FAR_X_IN, FAR_Y_IN);
-                    if (!aligned) break;
-
-                    // Once aligned, FIRE LEFT CATAPULT
-                    if (robot.leftCatapult != null) {
-                        robot.leftCatapult.setPower(1.0);
-                        sleep(CATAPULT_FIRE_MS);
-                        robot.leftCatapult.setPower(0.0);
-                    }
-                    shotsFired++;
-                    state = State.RELOAD;
-                    timer.reset();
-                    break;
-                }
-
-                // ------------------------------------------------------------
-                case RELOAD: {
-                    // Use a reload servo to feed the next purple into the left catapult.
-                    // Requires: public Servo catapultLoader; in HardwareConfig.
-                    if (robot.catapultLoader != null) {
-                        robot.catapultLoader.setPosition(1.0); // extend
-                        sleep(RELOAD_EXTEND_MS);
-                        robot.catapultLoader.setPosition(0.0); // retract
-                        sleep(RELOAD_RETRACT_MS);
-                    }
-                    state = State.DECIDE_NEXT_SHOT;
-                    break;
-                }
-
-                // ------------------------------------------------------------
-                case DECIDE_NEXT_SHOT: {
-                    if (shotsFired < 3) {
-                        // Move again to far spot (in case we drifted) and shoot again
-                        state = State.DRIVE_TO_FAR;
-                    } else {
-                        // After 3 shots, head to pickup area
-                        state = State.DRIVE_TO_PICKUP;
-                    }
-                    break;
-                }
-
-                // ------------------------------------------------------------
-                case DRIVE_TO_PICKUP: {
-                    boolean atPickup = driveToPoint(
-                            robot,
-                            pose,
-                            PICKUP_X_IN,
-                            PICKUP_Y_IN,
-                            PICKUP_HEADING_DEG
-                    );
-                    if (atPickup) {
-                        stopDrive(robot);
-                        state = State.PICKUP;
-                        timer.reset();
-                    }
-                    break;
-                }
-
-                // ------------------------------------------------------------
-                case PICKUP: {
-                    // 1) Let HuskyLens center on the artifact and approach
-                    husky.alignToTarget(HUSKY_PIXEL_TOL, HUSKY_TARGET_DIST_IN);
-
-                    // 2) Spin intake and shove artifact in with intakeArm or a pushServo
-                    robot.intakeMotor.setPower(1.0);
-                    sleep(350);
-                    robot.intakeMotor.setPower(0.0);
-
-                    if (robot.intakeArm != null) {
-                        robot.intakeArm.setPosition(1.0);
-                        sleep(250);
-                        robot.intakeArm.setPosition(0.0);
-                        sleep(150);
-                    }
-
-                    state = State.DONE; // After one pickup sequence; you can expand later
-                    break;
-                }
-
-                // ------------------------------------------------------------
-                case DONE: {
-                    stopDrive(robot);
-                    break;
-                }
+            if (cur != null) {
+                telemetry.addData("Tag valid", cur.valid);
+                telemetry.addData("Tag cam X (in)", "%.1f", cur.xIn);
+                telemetry.addData("Tag cam Y (in)", "%.1f", cur.yIn);
+            } else {
+                telemetry.addLine("No tag detections yet...");
             }
 
             telemetry.update();
+            sleep(20);
         }
 
-        // Safety: stop everything at the end
-        stopDrive(robot);
-        if (robot.leftCatapult != null) robot.leftCatapult.setPower(0.0);
-        robot.intakeMotor.setPower(0.0);
-    }
+        // 4) Choose what we call "X distance" for your formula
+        double xDistanceIn;
 
-    // ==== Helper: drive toward a target point with field-centric mecanum ====
-    private boolean driveToPoint(HardwareConfig robot,
-                                 Position pose,
-                                 double targetX,
-                                 double targetY,
-                                 double targetHeadingDeg) {
-
-        double x = pose.getX();
-        double y = pose.getY();
-        double hDeg = pose.getHeading();
-
-        double dx = targetX - x;
-        double dy = targetY - y;
-        double dist = Math.hypot(dx, dy);
-
-        double desiredHeading = Math.toDegrees(Math.atan2(dy, dx));
-        double headingErrorToPoint = angleWrap(desiredHeading - hDeg);
-        double headingErrorFinal   = angleWrap(targetHeadingDeg - hDeg);
-
-        // "Drive" vector in field frame
-        double driveMag = DRIVE_KP_POS * dist;
-        driveMag = clamp(driveMag, -MAX_DRIVE_PWR, MAX_DRIVE_PWR);
-
-        double dirRad = Math.toRadians(desiredHeading);
-        double vxField = driveMag * Math.cos(dirRad); // X in field
-        double vyField = driveMag * Math.sin(dirRad); // Y in field
-
-        // Convert field vector to robot frame (for mecanum)
-        double hRad = Math.toRadians(hDeg);
-        double forward =  Math.cos(hRad)*vxField + Math.sin(hRad)*vyField;
-        double strafe  = -Math.sin(hRad)*vxField + Math.cos(hRad)*vyField;
-
-        // Turn toward targetHeading while we move
-        double turn = DRIVE_KP_HEAD * headingErrorFinal;
-        turn = clamp(turn, -MAX_TURN_PWR, MAX_TURN_PWR);
-
-        // If we're close in position, stop translation and just fix heading
-        if (dist < POS_TOL_IN) {
-            forward = 0;
-            strafe  = 0;
-            turn = DRIVE_KP_HEAD * headingErrorFinal;
+        if (bestTag != null && bestTag.valid) {
+            // bestTag.yIn = distance forward from camera to the tag (inches)
+            // This is usually what you care about for shot power (distance AWAY from the goal).
+            xDistanceIn = bestTag.yIn;
+        } else {
+            // Fallback distance if we never see the tag
+            xDistanceIn = 36.0; // <- pick a reasonable default in inches
+            telemetry.addLine("No valid goal tag; using default distance: " + xDistanceIn + " in");
         }
 
-        setMecanumDrive(robot, strafe, forward, turn);
+        // 5) Compute launch power from X distance (you plug your formula in here)
+        double launchPower = computeLaunchPowerFromXDistance(xDistanceIn);
 
-        // Done if close in both position and heading
-        return (dist < POS_TOL_IN) && (Math.abs(headingErrorFinal) < HEAD_TOL_DEG);
+        telemetry.addData("X distance used (in)", "%.1f", xDistanceIn);
+        telemetry.addData("Launch power", "%.2f", launchPower);
+        telemetry.update();
+
+        // 6) Fire both catapults with that power
+        fireBothCatapults(launchPower, 800); // 800 ms = guess; tune for your mechanism
+
+        telemetry.addLine("mainAuto complete.");
+        telemetry.update();
+        sleep(500);
     }
 
-    // ==== Helper: align robot to face the FAR goal (for scoring) ====
-    private boolean alignToGoalHeading(HardwareConfig robot,
-                                       Position pose,
-                                       double goalX,
-                                       double goalY) {
-        double x = pose.getX();
-        double y = pose.getY();
-        double hDeg = pose.getHeading();
+    /**
+     * YOUR SHOT-FORMULA GOES HERE.
+     *
+     * xDistanceIn = forward distance from the camera to the goal AprilTag (inches).
+     * Replace the body with your actual function P(x).
+     */
+    private double computeLaunchPowerFromXDistance(double xDistanceIn) {
+        // Example placeholder so it compiles:
+        // double power = 0.40 + 0.005 * xDistanceIn;
+        // return clamp(power, 0.0, 1.0);
 
-        double desired = Math.toDegrees(Math.atan2(goalY - y, goalX - x));
-        double err = angleWrap(desired - hDeg);
-
-        double turn = DRIVE_KP_HEAD * err;
-        turn = clamp(turn, -MAX_TURN_PWR, MAX_TURN_PWR);
-
-        // Only rotate in place for fine aiming
-        setMecanumDrive(robot, 0, 0, turn);
-
-        return Math.abs(err) < HEAD_TOL_DEG;
+        double power = 0.5; // <-- REPLACE THIS with your real math
+        return clamp(power, 0.0, 1.0);
     }
 
-    // ==== Mecanum drive helper ====
-    private void setMecanumDrive(HardwareConfig robot,
-                                 double strafe,
-                                 double forward,
-                                 double turn) {
+    /**
+     * Basic time-based catapult fire. Both motors run at the same power.
+     * Make sure leftCatapult/rightCatapult are mapped in HardwareConfig.
+     */
+    private void fireBothCatapults(double power, long durationMs) {
+        DcMotor left  = robot.leftCatapult;
+        DcMotor right = robot.rightCatapult;
 
-        double lf = forward + strafe + turn;
-        double rf = forward - strafe - turn;
-        double lb = forward - strafe + turn;
-        double rb = forward + strafe - turn;
+        power = clamp(power, -1.0, 1.0);
 
-        double max = Math.max(1.0,
-                Math.max(Math.abs(lf),
-                        Math.max(Math.abs(rf),
-                                Math.max(Math.abs(lb), Math.abs(rb)))));
+        if (left != null) {
+            left.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+            left.setPower(power);
+        }
+        if (right != null) {
+            right.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+            right.setPower(power);
+        }
 
-        lf /= max;
-        rf /= max;
-        lb /= max;
-        rb /= max;
+        sleep(durationMs);
 
-        robot.leftFront .setPower(lf);
-        robot.rightFront.setPower(rf);
-        robot.leftBack  .setPower(lb);
-        robot.rightBack .setPower(rb);
-    }
-
-    private void stopDrive(HardwareConfig robot) {
-        setMecanumDrive(robot, 0, 0, 0);
-    }
-
-    // ==== Small math helpers ====
-    private double angleWrap(double deg) {
-        deg = (deg + 540.0) % 360.0 - 180.0;
-        return deg;
+        if (left != null)  left.setPower(0.0);
+        if (right != null) right.setPower(0.0);
     }
 
     private double clamp(double v, double lo, double hi) {
-        return Math.max(lo, Math.min(hi, v));
+        if (v < lo) return lo;
+        if (v > hi) return hi;
+        return v;
     }
 }
