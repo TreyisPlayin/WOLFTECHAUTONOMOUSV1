@@ -27,9 +27,12 @@ public class HardwareConfig {
     public HardwareConfig(LinearOpMode opmode) {currentOpMode = opmode;}
 
     public void init(HardwareMap hardwareMap, Telemetry telemetry) {
-        pinpoint.resetPosAndIMU();
+        // Initialize sensors first so they can be used immediately by the calling OpMode.
         //huskyLens = currentOpMode.hardwareMap.get(HuskyLens.class, "huskyLens");
         pinpoint = currentOpMode.hardwareMap.get(GoBildaPinpointDriver.class, "pinpointComputer");
+        if (pinpoint != null) {
+            pinpoint.resetPosAndIMU();
+        }
         leftFront = currentOpMode.hardwareMap.get(DcMotor.class, "LF");
         rightFront = currentOpMode.hardwareMap.get(DcMotor.class, "RF");
         leftRear = currentOpMode.hardwareMap.get(DcMotor.class, "LR");
