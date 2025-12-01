@@ -19,8 +19,9 @@ import java.util.List;
  * plus vision (AprilTag via VisionPortal) as optional correction when a tag is visible.
  */
 public class LocalizationManager {
+    private final HardwareMap hardwareMap;
     private final GoBildaPinpointDriver pinpoint;
-    private final VisionPortal visionPortal;
+    private VisionPortal visionPortal;
     private final AprilTagProcessor tagProcessor;
 
     // Current pose (mm, radians)
@@ -32,25 +33,41 @@ public class LocalizationManager {
     private final ElapsedTime timer = new ElapsedTime();
 
     public LocalizationManager(HardwareMap hardwareMap, GoBildaPinpointDriver pinpoint) {
+        this.hardwareMap = hardwareMap;
         this.pinpoint = pinpoint;
 
-        // initialize vision portal + AprilTag
+        // initialize AprilTag processor; VisionPortal is built later in start()
         this.tagProcessor = new AprilTagProcessor.Builder().build();
-        this.visionPortal = VisionPortal.easyCreateWithDefaults(
-                hardwareMap.get(WebcamName.class, "Webcam 1"),
-                this.tagProcessor
-        );
+        this.visionPortal = null;
     }
 
     /** Must be called once in init (before start) */
     public void start() {
         pinpoint.resetPosAndIMU();
-        visionPortal.start();
+        ensureVisionPortalActive();
         timer.reset();
+    }
+
+    /** Lazily create and start or resume the vision portal */
+    private void ensureVisionPortalActive() {
+        if (visionPortal == null) {
+            visionPortal = VisionPortal.easyCreateWithDefaults(
+                    hardwareMap.get(WebcamName.class, "Webcam 1"),
+                    tagProcessor
+            );
+        } else {
+            VisionPortal.CameraState state = visionPortal.getCameraState();
+            if (state == VisionPortal.CameraState.PAUSED || state == VisionPortal.CameraState.STOPPED) {
+                visionPortal.resumeStreaming();
+            }
+        }
+        visionPortal.setProcessorEnabled(tagProcessor, true);
     }
 
     /** Call this in each loop to update pose estimate */
     public void update() {
+        ensureVisionPortalActive();
+
         // 1. base pose from pinpoint
         x_mm = pinpoint.getX();
         y_mm = pinpoint.getY();
