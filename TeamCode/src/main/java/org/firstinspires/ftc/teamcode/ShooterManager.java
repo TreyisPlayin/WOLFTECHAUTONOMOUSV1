@@ -1,136 +1,53 @@
 package org.firstinspires.ftc.teamcode;
 
-import com.qualcomm.hardware.rev.RevBlinkinLedDriver;
-import com.qualcomm.robotcore.hardware.DcMotorEx;
-import com.qualcomm.robotcore.hardware.DistanceSensor;
-import com.qualcomm.robotcore.hardware.Servo;
-import com.qualcomm.robotcore.util.ElapsedTime;
-import org.firstinspires.ftc.robotcore.external.Telemetry;
-import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
+import com.acmerobotics.dashboard.config.Config;
+import com.arcrobotics.ftclib.controller.PIDFController;
+import com.arcrobotics.ftclib.util.InterpLUT;
+import com.qualcomm.robotcore.hardware.PwmControl;
+import com.qualcomm.robotcore.hardware.ServoImplEx;
+import com.qualcomm.robotcore.util.ReadWriteFile;
+import org.firstinspires.ftc.robotcore.internal.system.AppUtil;
+import java.io.File;
 
+@Config
 public class ShooterManager {
+    // Tunable via FTC Dashboard
+    public static double kP = 0.006, kI = 0.0, kD = 0.0001, kV = 0.00048, kS = 0.05;
+    public static double PWM_MIN = 500, PWM_MAX = 2500;
 
-    private final HardwareConfig hw;
-    private final Telemetry telemetry;
+    public final InterpLUT rpmTable = new InterpLUT();
+    public final InterpLUT hoodTable = new InterpLUT();
+    private final PIDFController controller = new PIDFController(kP, kI, kD, 0);
+    private final File dataFile = AppUtil.getInstance().getSettingsFile("shooter_data.csv");
 
-    private double targetRPM = 0.0;
+    public void tunePIDF(double p, double i, double d) { controller.setPIDF(p, i, d, 0); }
 
-    private double gateClosed = 0.0;
-    private double gateOpen   = 1.0;
-    private double pusherHome = 0.0;
-    private double pusherFire = 1.0;
+    public void saveShot(double dist, double rpm, double angle, boolean hit) {
+        String current = dataFile.exists()? ReadWriteFile.readFile(dataFile) : "Dist,RPM,Angle,Hit\n";
+        String line = String.format("%.2f,%.0f,%.1f,%b\n", dist, rpm, angle, hit);
+        ReadWriteFile.writeFile(dataFile, current + line);
+    }
 
-    private static final long PUSHER_TIME_MS = 200;
-
-    // Always-on feed power per your request (adjust)
-    private static final double FEED_IDLE_POWER = 0.35;
-
-    // Exit detect
-    private static final double EXIT_BLOCKED_MM = 80.0;
-    private boolean exitWasBlocked = false;
-    private boolean shotJustExited = false;
-
-    public ShooterManager(HardwareConfig hw, Telemetry tel) {
-        this.hw = hw;
-        this.telemetry = tel;
-
-        if (hw.flywheelMotor != null) {
-            hw.flywheelMotor.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
-            hw.flywheelMotor.setPower(0.0);
+    public void loadTrainingData() {
+        if (!dataFile.exists()) return;
+        String lines = ReadWriteFile.readFile(dataFile).split("\n");
+        for (String line : lines) {
+            String p = line.split(",");
+            if (p.length < 4 ||!Boolean.parseBoolean(p[1])) continue; // Only load "Hits"
+            rpmTable.add(Double.parseDouble(p), Double.parseDouble(p[2]));
+            hoodTable.add(Double.parseDouble(p), Double.parseDouble(p[3]));
         }
-        if (hw.forwardFeedMotor != null) {
-            // always spinning
-            hw.forwardFeedMotor.setPower(FEED_IDLE_POWER);
-        }
-
-        if (hw.leftGate != null) hw.leftGate.setPosition(gateClosed);
-        if (hw.rightGate != null) hw.rightGate.setPosition(gateClosed);
-        if (hw.leftPusher != null) hw.leftPusher.setPosition(pusherHome);
-        if (hw.rightPusher != null) hw.rightPusher.setPosition(pusherHome);
-
-        if (hw.blinkin != null) hw.blinkin.setPattern(RevBlinkinLedDriver.BlinkinPattern.BLACK);
+        rpmTable.createLUT(); hoodTable.createLUT();
     }
 
-    public void setTargetRPM(double rpm) {
-        this.targetRPM = rpm;
-        if (hw.flywheelMotor != null) hw.flywheelMotor.setVelocity(rpmToTicksPerSecond(rpm));
-        // Replace this mapping with your own equation if desired
-        if (hw.hoodServo != null) hw.hoodServo.setPosition(getAngleForRPM(rpm));
+    public void updateServo(ServoImplEx servo, double targetAngle) {
+        servo.setPwmRange(new PwmControl.PwmRange(PWM_MIN, PWM_MAX));
+        double pos = (targetAngle + 5.0) / 45.0; // Maps -5..40 range
+        servo.setPosition(Math.max(0, Math.min(1, pos)));
     }
 
-    private double getAngleForRPM(double rpm) {
-        double minRPM = 2000.0, maxRPM = 4000.0;
-        double minPos = 0.4,   maxPos = 0.9;
-        if (rpm < minRPM) rpm = minRPM;
-        if (rpm > maxRPM) rpm = maxRPM;
-        double t = (rpm - minRPM) / (maxRPM - minRPM);
-        return minPos + t * (maxPos - minPos);
-    }
-
-    public void waitUntilReady() {
-        if (hw.flywheelMotor == null) return;
-        double targetTPS = rpmToTicksPerSecond(targetRPM);
-        ElapsedTime timer = new ElapsedTime();
-        while (timer.milliseconds() < 2000) {
-            double v = hw.flywheelMotor.getVelocity();
-            telemetry.addData("Shooter vel", "%.0f / %.0f", v, targetTPS);
-            telemetry.update();
-            if (Math.abs(v - targetTPS) <= 0.05 * targetTPS) break;
-        }
-    }
-
-    public void setLedReady(boolean ready) {
-        if (hw.blinkin == null) return;
-        hw.blinkin.setPattern(
-                ready ? RevBlinkinLedDriver.BlinkinPattern.HEARTBEAT_GREEN
-                        : RevBlinkinLedDriver.BlinkinPattern.BREATH_RED_ORANGE
-        );
-    }
-
-    /** Must be called each loop to update exit detection & LED state if you want live feedback. */
-    public void update() {
-        shotJustExited = false;
-        if (hw.flywheelExitSensor != null) {
-            double d = hw.flywheelExitSensor.getDistance(DistanceUnit.MM);
-            boolean blocked = (d > 0 && d < EXIT_BLOCKED_MM);
-            if (exitWasBlocked && !blocked) shotJustExited = true; // edge → ball left
-            exitWasBlocked = blocked;
-        }
-    }
-
-    public boolean shotJustExited() {
-        return shotJustExited;
-    }
-
-    /** Fire one ball from given channel (0=LEFT, 1=RIGHT). Gates + per-channel pusher. */
-    public void fireOneFromChannel(int channel) {
-        Servo gate = (channel == 0) ? hw.leftGate  : hw.rightGate;
-        Servo push = (channel == 0) ? hw.leftPusher: hw.rightPusher;
-        if (gate == null || push == null) return;
-
-        // open gate and pulse pusher to drop into the (already spinning) feed
-        gate.setPosition(gateOpen);
-        push.setPosition(pusherFire);
-        sleep(PUSHER_TIME_MS);
-        push.setPosition(pusherHome);
-        gate.setPosition(gateClosed);
-    }
-
-    public void stopAll() {
-        if (hw.flywheelMotor != null) hw.flywheelMotor.setPower(0.0);
-        if (hw.forwardFeedMotor != null) hw.forwardFeedMotor.setPower(0.0);
-        if (hw.leftGate != null) hw.leftGate.setPosition(gateClosed);
-        if (hw.rightGate != null) hw.rightGate.setPosition(gateClosed);
-        if (hw.leftPusher != null) hw.leftPusher.setPosition(pusherHome);
-        if (hw.rightPusher != null) hw.rightPusher.setPosition(pusherHome);
-        setLedReady(false);
-    }
-
-    private double rpmToTicksPerSecond(double rpm) {
-        return rpm * 28.0 / 60.0;
-    }
-
-    private void sleep(long ms) {
-        try { Thread.sleep(ms); } catch (InterruptedException ignored) {}
+    public double getFlywheelPower(double dist, double currentRPM) {
+        double target = rpmTable.get(dist);
+        return controller.calculate(currentRPM, target) + (target * kV) + (Math.signum(target) * kS);
     }
 }
